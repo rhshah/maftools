@@ -10,6 +10,7 @@
 #' @param height height of plot
 #' @param labelAll If true and if maf object is specified, maps all mutataions from maf onto segments. Default FALSE, maps only variants on copy number altered regions.
 #' @param genes highlight only these variants
+#' @param ref.build Reference build for chromosome sizes. Can be hg18, hg19 or hg38. Default hg19.
 #' @param writeTable If true and if maf object is specified, writes plot data with each variant and its corresponding copynumber to an output file.
 #' @param removeXY don not plot sex chromosomes.
 #' @param color Manually specify color scheme for chromosomes. Default NULL.
@@ -20,21 +21,14 @@
 #' plotCBSsegments(cbsFile = tcga.ab.009.seg)
 #'
 
-plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, savePlot = FALSE, width = 6, height = 3, labelAll = FALSE, genes = NULL, writeTable = FALSE, removeXY = FALSE, color = NULL){
+plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, savePlot = FALSE, width = 6, height = 3, labelAll = FALSE, genes = NULL, ref.build = 'hg19', writeTable = FALSE, removeXY = FALSE, color = NULL){
 
   if(is.null(cbsFile)){
-    stop('Required segmentation file !')
+    stop('Missing segmentation file!')
   }
 
   #Read segmentation file and change chromosome names
   seg = readSegs(seg = cbsFile)
-  #onlyContigs = as.character(seq(1:22))
-  seg$Chromosome = gsub(pattern = 'chr', replacement = '', x = seg$Chromosome, fixed = TRUE)
-  #Replace chr x and y with numeric value (23 and 24) for better sorting
-  seg$Chromosome = gsub(pattern = 'X', replacement = '23', x = seg$Chromosome, fixed = TRUE)
-  seg$Chromosome = gsub(pattern = 'Y', replacement = '24', x = seg$Chromosome, fixed = TRUE)
-  #seg = seg[!Chromosome %in% c('X', 'Y')]
-  #seg = seg[Chromosome %in% onlyContigs]
 
   if(removeXY){
     seg = seg[!Chromosome %in% c('23', '24')]
@@ -46,15 +40,16 @@ plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, s
   #If user doesn't provide sample name
   if(is.null(tsb)){
     #Number of unique samples in segmentation file
-    tsb = unique(seg[,Sample])
+    tsb = unique(as.character(seg[,Sample]))
+  }else{
+    tsb = gsub(pattern = '-', replacement = '.', x = as.character(tsb))
   }
 
   #If maf object is specified, map mutations on to segments
   if(!is.null(maf)){
-
     for(i in 1:length(tsb)){
       #Map mutations to segments
-      tsb.mapped = mapMutsToSegs(seg = seg, maf = maf, tsb = tsb[i])
+      tsb.mapped = mapMutsToSegs(seg = seg, maf = maf, tsb = tsb[i], build = ref.build)
 
       if(!is.null(chr)){
         #If any specific chromosome is specified
@@ -77,17 +72,17 @@ plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, s
           tsb.mapped.cn = tsb.mapped.cn[Chromosome == chr]
           p = p+geom_point(data = tsb.mapped, aes(x = Start_Position, y = Segment_Mean, label = Hugo_Symbol, color = 'green'), size = 0.6)+
             ggrepel::geom_text_repel(data = tsb.mapped.cn, aes(x = Start_Position, y = Segment_Mean,
-            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5)+theme(legend.position = 'none')
+            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5, segment.alpha = 0.60)+theme(legend.position = 'none')
         }else{
           #Lable all variants
           p = p+geom_point(data = tsb.mapped, aes(x = Start_Position, y = Segment_Mean, label = Hugo_Symbol, color = 'green'), size = 0.6)+
             ggrepel::geom_text_repel(data = tsb.mapped, aes(x = Start_Position, y = Segment_Mean,
-            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5)+theme(legend.position = 'none')
+            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5, segment.alpha = 0.60)+theme(legend.position = 'none')
 
         }
       }else{
         #Plot CBS segments for all chromosome
-        p = suppressWarnings(plotCBS(segData = seg, tsb = tsb[i]))
+        p = suppressWarnings(plotCBS(segData = seg, tsb = tsb[i], build = ref.build))
         if(!labelAll){
 
           if(!is.null(genes)){
@@ -98,11 +93,11 @@ plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, s
 
           p = p+geom_point(data = tsb.mapped, aes(x = Start_Position_updated, y = Segment_Mean, label = Hugo_Symbol, color = 'green'), size = 0.6)+
             ggrepel::geom_text_repel(data = tsb.mapped.cn, aes(x = Start_Position_updated, y = Segment_Mean,
-            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5)+theme(legend.position = 'none')
+            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5, segment.alpha = 0.60)+theme(legend.position = 'none')
         }else{
           p = p+geom_point(data = tsb.mapped, aes(x = Start_Position_updated, y = Segment_Mean, label = Hugo_Symbol), size = 0.6)+
             ggrepel::geom_text_repel(data = tsb.mapped, aes(x = Start_Position_updated, y = Segment_Mean,
-            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5)+theme(legend.position = 'none')
+            label = Hugo_Symbol), force = 10, nudge_y = 0.20, size = 2.5, segment.alpha = 0.60)+theme(legend.position = 'none')
         }
       }
 
@@ -122,7 +117,7 @@ plotCBSsegments = function(cbsFile = NULL, maf = NULL, tsb = NULL, chr = NULL, s
       if(!is.null(chr)){
         p = suppressWarnings(plotCBSchr(segData = seg, tsb = tsb[i], chr = chr))
       }else{
-        p = suppressWarnings(plotCBS(segData = seg, tsb = tsb[i]))
+        p = suppressWarnings(plotCBS(segData = seg, tsb = tsb[i], build = ref.build))
       }
 
       if(savePlot){

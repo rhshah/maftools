@@ -58,10 +58,10 @@ pfamDomains = function(maf = NULL, AACol = NULL, summarizeBy = 'AAPos', top = 5,
 
   if(Sys.info()[['sysname']] == 'Windows'){
     gff.gz = gzfile(description = gff, open = 'r')
-    gff <- suppressWarnings( data.table(read.csv( file = gff.gz, header = TRUE, sep = '\t', stringsAsFactors = FALSE)) )
+    gff <- suppressWarnings( data.table::data.table(read.csv( file = gff.gz, header = TRUE, sep = '\t', stringsAsFactors = FALSE)) )
     close(gff.gz)
   } else{
-    gff = fread(input = paste('zcat <', gff), sep = '\t', stringsAsFactors = FALSE)
+    gff = data.table::fread(input = paste('zcat <', gff), sep = '\t', stringsAsFactors = FALSE)
   }
 
   if(is.null(AACol)){
@@ -83,13 +83,14 @@ pfamDomains = function(maf = NULL, AACol = NULL, summarizeBy = 'AAPos', top = 5,
   prot.dat = prot.dat[Variant_Classification != 'Splice_Site']
   #Remove 'p.'
   prot.spl = strsplit(x = as.character(prot.dat$AAChange), split = '.', fixed = TRUE)
-  prot.conv = sapply(prot.spl, function(x) x[length(x)])
+  prot.conv = sapply(sapply(prot.spl, function(x) x[length(x)]), '[', 1)
 
   prot.dat[,conv := prot.conv]
   pos = gsub(pattern = '[[:alpha:]]', replacement = '', x = prot.dat$conv)
   pos = gsub(pattern = '\\*$', replacement = '', x = pos) #Remove * if nonsense mutation ends with *
   pos = gsub(pattern = '^\\*', replacement = '', x = pos)
-  pos = as.numeric(sapply(strsplit(x = pos, split = '_', fixed = TRUE), '[', 1))
+  pos = gsub(pattern = '\\*.*', replacement = '', x = pos) #Remove * followed by position e.g, p.C229Lfs*18
+  pos = as.numeric(sapply(strsplit(x = pos, split = '_', fixed = TRUE), '[[', 1))
   prot.dat[,pos := pos]
 
   if(nrow( prot.dat[is.na(prot.dat$pos),]) > 0){
@@ -103,7 +104,7 @@ pfamDomains = function(maf = NULL, AACol = NULL, summarizeBy = 'AAPos', top = 5,
     prot.sum = merge(prot.sum, gs[,.(Hugo_Symbol ,total)], by = 'Hugo_Symbol')
     prot.sum = prot.sum[order(N, decreasing = TRUE)]
     prot.sum[,fraction := N/total]
-    prot.sum = data.table(HGNC = prot.sum[,Hugo_Symbol], Start = prot.sum[,pos], End = prot.sum[,pos],
+    prot.sum = data.table::data.table(HGNC = prot.sum[,Hugo_Symbol], Start = prot.sum[,pos], End = prot.sum[,pos],
                           Variant_Classification = prot.sum[,Variant_Classification],
                           N = prot.sum[,N], total = prot.sum[,total], fraction = prot.sum[,fraction])
   }else{
@@ -111,14 +112,14 @@ pfamDomains = function(maf = NULL, AACol = NULL, summarizeBy = 'AAPos', top = 5,
     prot.sum = merge(prot.sum, gs[,.(Hugo_Symbol ,total)], by = 'Hugo_Symbol')
     prot.sum = prot.sum[order(N, decreasing = TRUE)]
     prot.sum[,fraction := N/total]
-    prot.sum = data.table(HGNC = prot.sum[,Hugo_Symbol], Start = prot.sum[,pos], End = prot.sum[,pos],
+    prot.sum = data.table::data.table(HGNC = prot.sum[,Hugo_Symbol], Start = prot.sum[,pos], End = prot.sum[,pos],
                           Variant_Classification = prot.sum[,Variant_Classification], AAChange = prot.sum[,AAChange],
                           N = prot.sum[,N], total = prot.sum[,total], fraction = prot.sum[,fraction])
   }
 
   gff = gff[,.(HGNC, Start, End, Label, pfam, Description)]
-  setkey(gff, HGNC, Start, End)
-  gff.idx = foverlaps(prot.sum, gff, type="within", which=TRUE, nomatch = NA, mult = 'first')
+  data.table::setkey(gff, HGNC, Start, End)
+  gff.idx = data.table::foverlaps(prot.sum, gff, type="within", which=TRUE, nomatch = NA, mult = 'first')
 
   prot.sum[, idx:=gff.idx]
 
@@ -162,8 +163,8 @@ pfamDomains = function(maf = NULL, AACol = NULL, summarizeBy = 'AAPos', top = 5,
   domainSum = domainSum[order(nMuts, decreasing = TRUE)]
 
   #print(prot.sum)
-  p = ggplot(data = domainSum, aes(x = nMuts, y = nGenes, size = nGenes, alpha = 0.6))+geom_point()+cowplot::theme_cowplot()+
-    geom_text_repel(data = domainSum[1:top], aes(x = nMuts, y = nGenes, label = DomainLabel, color = 'maroon'), size = 3, fontface = 'bold', force = 30)+
+  p = ggplot(data = domainSum, aes(x = nMuts, y = nGenes, size = nGenes))+geom_point()+cowplot::theme_cowplot()+
+    ggrepel::geom_text_repel(data = domainSum[1:top], aes(x = nMuts, y = nGenes, label = DomainLabel, color = 'red'), size = 3, fontface = 'bold', force = 20)+
     theme(legend.position = 'none')+cowplot::background_grid(major = 'xy')
 
   print(p)

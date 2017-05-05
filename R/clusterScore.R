@@ -23,26 +23,28 @@ parse_prot = function(dat, AACol, gl, m, calBg = FALSE, nBg){
   all.prot.dat = all.prot.dat[Variant_Classification != 'Splice_Site']
   #parse AAchanges to get postion
   prot.spl = strsplit(x = as.character(all.prot.dat$AAChange), split = '.', fixed = TRUE)
-  prot.conv = sapply(prot.spl, function(x) x[length(x)])
+  prot.conv = sapply(sapply(prot.spl, function(x) x[length(x)]), '[', 1)
 
   all.prot.dat[,conv := prot.conv]
   all.prot.dat = all.prot.dat[!conv == 'NULL']
-  pos = gsub(pattern = '[[:alpha:]]', replacement = '', x = all.prot.dat$conv)
+
+  #If conversions are in HGVSp_long (default HGVSp) format, we will remove strings Ter followed by anything (e.g; p.Asn1986GlnfsTer13)
+  pos = gsub(pattern = 'Ter.*', replacement = '',x = all.prot.dat$conv)
+
+  #Following parsing takes care of most of HGVSp_short and HGVSp_long format
+  pos = gsub(pattern = '[[:alpha:]]', replacement = '', x = pos)
   pos = gsub(pattern = '\\*$', replacement = '', x = pos) #Remove * if nonsense mutation ends with *
+  pos = gsub(pattern = '^\\*', replacement = '', x = pos) #Remove * if nonsense mutation starts with *
+  pos = gsub(pattern = '\\*.*', replacement = '', x = pos) #Remove * followed by position e.g, p.C229Lfs*18
+
   pos = suppressWarnings( as.numeric(sapply(strsplit(x = pos, split = '_', fixed = TRUE), '[', 1)) )
   all.prot.dat[,pos := pos]
 
-  if(nrow( all.prot.dat[is.na(all.prot.dat$pos),]) > 0){
-    #message(paste('Removed', nrow( all.prot.dat[is.na(all.prot.dat$pos),]), 'mutations for which AA position was not available', sep = ' '))
-    #print(prot.dat[is.na(prot.dat$pos),])
-    all.prot.dat = all.prot.dat[!is.na(all.prot.dat$pos),]
-  }
+  all.prot.dat = all.prot.dat[!is.na(pos)] #Remove NA's
 
-  gene.sum = summarizeMaf(maf = dat)$gene.summary
-  #gene.sum = merge.data.frame(x = gene.sum, y = gl, by = 'Hugo_Symbol', all.x = TRUE)
+  gene.sum = summarizeMaf(maf = dat, chatty = FALSE)$gene.summary
   gene.sum = merge(x = gene.sum, y = gl, by = 'Hugo_Symbol', all.x = TRUE)
-  #gene.sum = gene.sum[!is.na(gene.sum$aa.length),]
-  gene.sum = gene.sum[!is.na(gene.sum$aa.length)]
+  gene.sum = gene.sum[!is.na(aa.length)]
 
   num_mut_colIndex = which(colnames(gene.sum) == 'total')
   aalen_colIndex = which(colnames(gene.sum) == 'aa.length')
@@ -61,8 +63,8 @@ parse_prot = function(dat, AACol, gl, m, calBg = FALSE, nBg){
       pb <- txtProgressBar(min = 0, max = nrow(gene.sum), style = 3) #progress bar
 
       for(i in 1:nrow(gene.sum)){
-        prot.dat = all.prot.dat[Hugo_Symbol == gene.sum[i, "Hugo_Symbol"]]
-        syn.res = rbind(syn.res, cluster_prot(prot.dat = prot.dat, gene = gene.sum[i, "Hugo_Symbol"], th = gene.sum[i,"th"], protLen = gene.sum[i,"aa.length"]))
+        prot.dat = all.prot.dat[Hugo_Symbol %in% gene.sum[i, Hugo_Symbol]]
+        syn.res = rbind(syn.res, cluster_prot(prot.dat = prot.dat, gene = gene.sum[i, Hugo_Symbol], th = gene.sum[i, th], protLen = gene.sum[i,aa.length]))
         setTxtProgressBar(pb, i)
       }
       return(syn.res)

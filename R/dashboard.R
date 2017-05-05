@@ -1,4 +1,4 @@
-dashboard = function(maf, color = NULL, rmOutlier = TRUE, titv.color = NULL, sfs = statFontSize, fontSize = fs, n = 10){
+dashboard = function(maf, color = NULL, rmOutlier = TRUE, titv.color = NULL, sfs = statFontSize, fontSize = fs, n = 10, donut = pie, rawcount = TRUE){
 
   #--------------------------- Color code for VC -----------------
 
@@ -15,9 +15,11 @@ dashboard = function(maf, color = NULL, rmOutlier = TRUE, titv.color = NULL, sfs
   #--------------------------- variant per sample plot -----------------
 
   vcs = getSampleSummary(maf)
+  vcs = vcs[,colnames(vcs)[!colnames(x = vcs) %in% c('total', 'Amp', 'Del', 'CNV_total')], with = FALSE]
+
   #vcs = vcs[,2:(ncol(vcs)-1), with = F]
   #vcs = vcs[order(rowSums(vcs[,2:ncol(vcs), with = F]), decreasing = T)] #order tsbs based on number of mutations
-  vcs = vcs[,c(1,order(colSums(x = vcs[,2:(ncol(vcs)-1), with =FALSE]), decreasing = TRUE)+1), with =FALSE] #order based on most event
+  vcs = vcs[,c(1,order(colSums(x = vcs[,2:(ncol(vcs)), with =FALSE]), decreasing = TRUE)+1), with =FALSE] #order based on most event
 
   #melt data frame
   vcs.m = data.table::melt(data = vcs, id = 'Tumor_Sample_Barcode')
@@ -65,48 +67,96 @@ dashboard = function(maf, color = NULL, rmOutlier = TRUE, titv.color = NULL, sfs
   titv.counts = titv$raw.counts
   titv.sums = data.table::melt(colSums(titv.counts[,2:7, with =FALSE]))
   titv.sums$class = rownames(titv.sums)
-  titv.sums$class = gsub(pattern = '-', replacement = '>', x = titv.sums$class)
+  if(!rawcount){
+    titv.sums$value = titv.sums$value/sum(titv.sums$value)
+  }
 
 
   if(is.null(titv.color)){
-    titv.color = RColorBrewer::brewer.pal(n = 6, name = 'Set3')
+    #titv.color = RColorBrewer::brewer.pal(n = 6, name = 'Set3')
+    titv.color = c('coral4', 'lightcyan4', 'cornflowerblue', 'lightsalmon1', 'forestgreen', 'deeppink3')
     names(titv.color) = c('C>T', 'C>G', 'C>A', 'T>A', 'T>C', 'T>G')
   }
 
-  titv.gg = ggplot(data = titv.sums, aes(x = class, y = value, fill = class))+geom_bar(stat = 'identity')+scale_fill_manual(values = titv.color)+
-    cowplot::theme_cowplot(font_size = fontSize)+cowplot::background_grid(major = 'xy')+coord_flip()+
-    theme(legend.position = 'none')+xlab('')+ylab('N')+ggtitle('SNV Class')
+  if(donut){
+    titv.sums$fraction = titv.sums$value/sum(titv.sums$value)
+    titv.sums$ymax = cumsum(titv.sums$fraction)
+    titv.sums$ymin = c(0, head(titv.sums$ymax, n=-1))
+
+    #Credit: http://stackoverflow.com/questions/13615562/ggplot-donut-chart
+    #Credit: http://stackoverflow.com/questions/35267115/ggplot2-how-to-add-percentage-labels-to-a-donut-chart
+    titv.gg = ggplot(titv.sums, aes(fill= class, ymax=ymax, ymin=ymin, xmax=4, xmin=3))+geom_rect(colour="grey30")+coord_polar(theta="y") +
+      xlim(c(0, 4))+
+      theme(panel.background = element_blank(), axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank(), legend.position = 'bottom', legend.title = element_blank(), legend.key.size = unit(0.35, "cm"), legend.box.background = element_blank())+
+      geom_label(aes(label=round(dat$fraction, digits = 2),x=3.5,y=(ymin+ymax)/2),inherit.aes = TRUE, show.legend = FALSE, size = 2)
+  }else{
+    titv.gg = ggplot(data = titv.sums, aes(x = class, y = value, fill = class))+geom_bar(stat = 'identity')+scale_fill_manual(values = titv.color)+
+      cowplot::theme_cowplot(font_size = fontSize)+cowplot::background_grid(major = 'xy')+coord_flip()+
+      theme(legend.position = 'none')+xlab('')+ylab('N')+ggtitle('SNV Class')
+  }
+
+  if(!rawcount){
+    titv.gg = titv.gg+scale_y_continuous(breaks = seq(0, 1, 0.2), labels = seq(0, 1, 0.2), limits = c(0, 1))
+  }
+
 
 
   #--------------------------- variant type plot -----------------
   vt.plot.dat = maf@variant.type.summary
-  vt.plot.dat = suppressWarnings( data.table::melt(vt.plot.dat[,c(2:(ncol(vt.plot.dat))-1), with = FALSE], id = NULL))
+  vt.plot.dat = vt.plot.dat[,colnames(vt.plot.dat)[!colnames(x = vt.plot.dat) %in% c('total', 'CNV')], with = FALSE]
+  vt.plot.dat = suppressWarnings( data.table::melt(vt.plot.dat[,c(2:(ncol(vt.plot.dat))), with = FALSE], id = NULL))
 
-  vt.gg = ggplot(data = vt.plot.dat, aes(x = variable, y = value, fill = variable))+
-    geom_bar(stat = 'identity')+coord_flip()+cowplot::theme_cowplot(font_size = fontSize)+
-    cowplot::background_grid(major = 'xy')+
-    theme(legend.position = 'none')+xlab('')+ylab('N')+ggtitle('Variant Type')
+  if(donut){
+    vt.plot.dat = vt.plot.dat[,sum(value),variable]
+    colnames(vt.plot.dat)[2] = 'value'
+    vt.plot.dat$fraction = vt.plot.dat$value/sum(titv.sums$value)
+    vt.plot.dat$ymax = cumsum(vt.plot.dat$fraction)
+    vt.plot.dat$ymin = c(0, head(vt.plot.dat$ymax, n=-1))
+
+    vt.gg = ggplot(vt.plot.dat, aes(fill= variable, ymax=ymax, ymin=ymin, xmax=4, xmin=3))+geom_rect(colour="grey30")+coord_polar(theta="y") +
+      xlim(c(0, 4))+ggtitle('Variant Type')+
+      theme(panel.background = element_blank(), axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank(), legend.position = 'bottom', legend.title = element_blank(), legend.key.size = unit(0.35, "cm"), legend.box.background = element_blank())
+
+  }else{
+    vt.gg = ggplot(data = vt.plot.dat, aes(x = variable, y = value, fill = variable))+
+      geom_bar(stat = 'identity')+coord_flip()+cowplot::theme_cowplot(font_size = fontSize)+
+      cowplot::background_grid(major = 'xy')+
+      theme(legend.position = 'none')+xlab('')+ylab('N')+ggtitle('Variant Type')
+  }
+
 
   #--------------------------- variant classification plot -----------------
-  vc.plot.dat = maf@variant.classification.summary
-  vc.plot.dat = vc.plot.dat[,c(2:(ncol(vc.plot.dat)-1)), with =FALSE]
+#   vc.plot.dat = vcs
+#   vc.plot.dat = vc.plot.dat[,c(2:(ncol(vc.plot.dat))), with =FALSE]
+  vc.plot.dat = vcs[,2:ncol(vcs), with =FALSE]
   vc.lvl = sort(colSums(vc.plot.dat))
   vc.plot.dat = suppressWarnings( data.table::melt(vc.plot.dat))
   vc.plot.dat$variable = factor(x = vc.plot.dat$variable, levels = names(vc.lvl))
 
-  vc.gg = ggplot(data = vc.plot.dat, aes(x = variable, y = value, fill = variable))+
-    geom_bar(stat = 'identity')+scale_fill_manual(values = col)+coord_flip()+
-    cowplot::theme_cowplot(font_size = fontSize)+cowplot::background_grid(major = 'xy')+
-    theme(legend.position = 'none')+xlab('')+ylab('N')
+  if(donut){
+    vc.plot.dat = vc.plot.dat[,sum(value),variable]
+    colnames(vc.plot.dat)[2] = 'value'
+    vc.plot.dat$fraction = vc.plot.dat$value/sum(titv.sums$value)
+    vc.plot.dat$ymax = cumsum(vc.plot.dat$fraction)
+    vc.plot.dat$ymin = c(0, head(vc.plot.dat$ymax, n=-1))
 
-  vc.gg = vc.gg+ggtitle('Variant Classification')
+    vc.gg = ggplot(vc.plot.dat, aes(fill= variable, ymax=ymax, ymin=ymin, xmax=4, xmin=3))+geom_rect(colour="grey30")+coord_polar(theta="y") +
+      xlim(c(0, 4))+ggtitle('Variant Classification')+scale_fill_manual(values = col)+
+      theme(panel.background = element_blank(), axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank(), legend.position = 'bottom', legend.title = element_blank(), legend.key.size = unit(0.35, "cm"), legend.box.background = element_blank())
+
+  }else{
+    vc.gg = ggplot(data = vc.plot.dat, aes(x = variable, y = value, fill = variable))+
+      geom_bar(stat = 'identity')+scale_fill_manual(values = col)+coord_flip()+
+      cowplot::theme_cowplot(font_size = fontSize)+cowplot::background_grid(major = 'xy')+
+      theme(legend.position = 'none')+xlab('')+ylab('N')+ggtitle('Variant Classification')
+  }
+
 
 
 #--------------------------- hugo-symbol plot -----------------
   gs = getGeneSummary(maf)
+  gs = gs[,colnames(gs)[!colnames(x = gs) %in% c('total', 'Amp', 'Del', 'CNV_total', 'MutatedSamples')], with = FALSE]
   gs.dat = gs[1:n]
-  gs.dat[,total := NULL]
-  gs.dat[,MutatedSamples := NULL]
   gs.lvl = gs.dat[,Hugo_Symbol]
   gs.dat = suppressWarnings(data.table::melt(gs.dat))
   gs.dat$Hugo_Symbol = factor(x = gs.dat$Hugo_Symbol, levels = rev(gs.lvl))
@@ -123,9 +173,6 @@ dashboard = function(maf, color = NULL, rmOutlier = TRUE, titv.color = NULL, sfs
   return(dash.gg)
 
 }
-
-
-
 
 #   #--------------------------- oncoplot via ggplot -----------------
 #

@@ -1,31 +1,31 @@
 
 #Summarizing MAF
-summarizeMaf = function(maf){
-
-  maf.cnv = maf[Variant_Type %in% 'CNV']
-
-  maf = maf[!Variant_Type %in% 'CNV']
+summarizeMaf = function(maf, chatty = TRUE){
 
   if('NCBI_Build' %in% colnames(maf)){
-    NCBI_Build = unique(maf[,NCBI_Build])
+    NCBI_Build = unique(maf[!Variant_Type %in% 'CNV', NCBI_Build])
     NCBI_Build = NCBI_Build[!is.na(NCBI_Build)]
 
-    if(length(NCBI_Build) > 1){
-      message('NOTE: Mutiple reference builds found!')
-      NCBI_Build = do.call(paste, c(as.list(NCBI_Build), sep=";"))
-      message(NCBI_Build)
+    if(chatty){
+      if(length(NCBI_Build) > 1){
+        message('NOTE: Mutiple reference builds found!')
+        NCBI_Build = do.call(paste, c(as.list(NCBI_Build), sep=";"))
+        message(NCBI_Build)
+      }
     }
   }else{
     NCBI_Build = NA
   }
 
   if('Center' %in% colnames(maf)){
-    Center = unique(maf[,Center])
+    Center = unique(maf[!Variant_Type %in% 'CNV', Center])
     #Center = Center[is.na(Center)]
     if(length(Center) > 1){
-      message('Mutiple centers found.')
       Center = do.call(paste, c(as.list(Center), sep=";"))
-      print(Center)
+      if(chatty){
+        message('Mutiple centers found.')
+        print(Center)
+      }
     }
   }else{
     Center = NA
@@ -33,6 +33,11 @@ summarizeMaf = function(maf){
 
   #nGenes
   nGenes = length(unique(maf[,Hugo_Symbol]))
+
+  #Top 20 FLAGS - https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4267152/
+  flags = c("TTN", "MUC16", "OBSCN", "AHNAK2", "SYNE1", "FLG", "MUC5B",
+            "DNAH17", "PLEC", "DST", "SYNE2", "NEB", "HSPG2", "LAMA5", "AHNAK",
+            "HMCN1", "USH2A", "DNAH11", "MACF1", "MUC17")
 
   #Variants per TSB
   tsb = maf[,.N, Tumor_Sample_Barcode]
@@ -42,28 +47,70 @@ summarizeMaf = function(maf){
   #summarise and casting by 'Variant_Classification'
   vc = maf[,.N, .(Tumor_Sample_Barcode, Variant_Classification )]
   vc.cast = data.table::dcast(data = vc, formula = Tumor_Sample_Barcode ~ Variant_Classification, fill = 0, value.var = 'N')
-  vc.cast[,total:=rowSums(vc.cast[,2:ncol(vc.cast), with = FALSE])]
-  vc.cast = vc.cast[order(total, decreasing = TRUE)]
 
-  vc.mean = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, mean))))
-  vc.median = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, median))))
+  if(any(colnames(vc.cast) %in% c('Amp', 'Del'))){
+    vc.cast.cnv = vc.cast[,colnames(vc.cast)[colnames(vc.cast) %in% c('Amp', 'Del')], with =FALSE]
+    vc.cast.cnv$CNV_total = rowSums(x = vc.cast.cnv)
 
+    vc.cast = vc.cast[,!colnames(vc.cast)[colnames(vc.cast) %in% c('Amp', 'Del')], with =FALSE]
+    vc.cast[,total:=rowSums(vc.cast[,2:ncol(vc.cast), with = FALSE])]
+
+    vc.cast = cbind(vc.cast, vc.cast.cnv)
+    vc.cast = vc.cast[order(total, CNV_total, decreasing = TRUE)]
+
+    vc.mean = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, mean))))
+    vc.median = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, median))))
+
+  }else{
+    vc.cast[,total:=rowSums(vc.cast[,2:ncol(vc.cast), with = FALSE])]
+    vc.cast = vc.cast[order(total, decreasing = TRUE)]
+
+    vc.mean = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, mean))))
+    vc.median = as.numeric(as.character(c(NA, NA, NA, NA, apply(vc.cast[,2:ncol(vc.cast), with = FALSE], 2, median))))
+  }
 
   #summarise and casting by 'Variant_Type'
   vt = maf[,.N, .(Tumor_Sample_Barcode, Variant_Type )]
   vt.cast = data.table::dcast(data = vt, formula = Tumor_Sample_Barcode ~ Variant_Type, value.var = 'N', fill = 0)
-  vt.cast[,total:=rowSums(vt.cast[,2:ncol(vt.cast), with = FALSE])]
-  vt.cast = vt.cast[order(total, decreasing = TRUE)]
+
+  if(any(colnames(vt.cast) %in% c('CNV'))){
+    vt.cast.cnv = vt.cast[,colnames(vt.cast)[colnames(vt.cast) %in% c('CNV')], with =FALSE]
+
+    vt.cast = vt.cast[,!colnames(vt.cast)[colnames(vt.cast) %in% c('CNV')], with =FALSE]
+    vt.cast[,total:=rowSums(vt.cast[,2:ncol(vt.cast), with = FALSE])]
+    vt.cast = vt.cast[order(total, decreasing = TRUE)]
+
+    vt.cast = cbind(vt.cast, vt.cast.cnv)
+    vt.cast[order(total, CNV, decreasing = TRUE)]
+  }else{
+    vt.cast[,total:=rowSums(vt.cast[,2:ncol(vt.cast), with = FALSE])]
+    vt.cast = vt.cast[order(total, decreasing = TRUE)]
+  }
 
   #summarise and casting by 'Hugo_Symbol'
   hs = maf[,.N, .(Hugo_Symbol, Variant_Classification)]
   hs.cast = data.table::dcast(data = hs, formula = Hugo_Symbol ~Variant_Classification, fill = 0, value.var = 'N')
-  hs.cast = hs.cast[order(rowSums(hs.cast[,2:ncol(hs.cast), with = FALSE]), decreasing = TRUE)] #ordering according to frequent mutated gene
-  hs.cast[,total:=rowSums(hs.cast[,2:ncol(hs.cast), with = FALSE])]
+  #----
+  if(any(colnames(hs.cast) %in% c('Amp', 'Del'))){
+    hs.cast.cnv = hs.cast[,colnames(hs.cast)[colnames(hs.cast) %in% c('Amp', 'Del')], with =FALSE]
+    hs.cast.cnv$CNV_total = rowSums(x = hs.cast.cnv)
+
+    hs.cast = hs.cast[,!colnames(hs.cast)[colnames(hs.cast) %in% c('Amp', 'Del')], with =FALSE]
+    hs.cast[,total:=rowSums(hs.cast[,2:ncol(hs.cast), with = FALSE])]
+
+    hs.cast = cbind(hs.cast, hs.cast.cnv)
+    hs.cast = hs.cast[order(total, CNV_total, decreasing = TRUE)]
+
+  }else{
+    hs.cast[,total:=rowSums(hs.cast[,2:ncol(hs.cast), with = FALSE])]
+    hs.cast = hs.cast[order(total, decreasing = TRUE)]
+  }
+  #----
+
   #Get in how many samples a gene ismutated
-  numMutatedSamples = maf[,.(MutatedSamples = length(unique(Tumor_Sample_Barcode))), by = Hugo_Symbol]
+  numMutatedSamples = maf[!Variant_Type %in% 'CNV', .(MutatedSamples = length(unique(Tumor_Sample_Barcode))), by = Hugo_Symbol]
   #Merge and sort
-  hs.cast = merge(hs.cast, numMutatedSamples, by = 'Hugo_Symbol')
+  hs.cast = merge(hs.cast, numMutatedSamples, by = 'Hugo_Symbol', all = TRUE)
   hs.cast = hs.cast[order(MutatedSamples, total, decreasing = TRUE)]
   #Make a summarized table
   summary = data.table::data.table(ID = c('NCBI_Build', 'Center','Samples', 'nGenes',colnames(vc.cast)[2:ncol(vc.cast)]),
@@ -71,19 +118,56 @@ summarizeMaf = function(maf){
   summary[,Mean := vc.mean]
   summary[,Median := vc.median]
 
+  if(chatty){
+    print(summary)
+
+    message("Frequently mutated genes..")
+    print(hs.cast)
+  }
+
+  #Check for flags.
+  if(nrow(hs.cast) > 10){
+    topten = hs.cast[1:10, Hugo_Symbol]
+    topten = topten[topten %in% flags]
+      if(chatty){
+        if(length(topten) > 0){
+          message('NOTE: Possible FLAGS among top ten genes:')
+          print(topten)
+      }
+    }
+  }
+
   return(list(variants.per.sample = tsb, variant.type.summary = vt.cast, variant.classification.summary = vc.cast,
               gene.summary = hs.cast, summary = summary))
 }
 
 # This is using data.table. Very Fast :) :) :)
-createOncoMatrix = function(maf){
+createOncoMatrix = function(maf, chatty = TRUE){
 
+  if(chatty){
     message('Creating oncomatrix (this might take a while)..')
+  }
+
+     # oncomat = data.table::dcast(data = maf[,.(Hugo_Symbol, Variant_Classification, Tumor_Sample_Barcode)], formula = Hugo_Symbol ~ Tumor_Sample_Barcode,
+     #                             fun.aggregate = function(x) {ifelse(test = length(as.character(x))>1 ,
+     #                            no = as.character(x), yes = vcr(x, gis = FALSE))
+     #                             }, value.var = 'Variant_Classification', fill = '')
 
      oncomat = data.table::dcast(data = maf[,.(Hugo_Symbol, Variant_Classification, Tumor_Sample_Barcode)], formula = Hugo_Symbol ~ Tumor_Sample_Barcode,
-                                 fun.aggregate = function(x) {ifelse(test = length(as.character(x))>1 ,
-                                no = as.character(x), yes = vcr(x, gis = FALSE))
-                                 }, value.var = 'Variant_Classification', fill = '')
+                            fun.aggregate = function(x){
+                              x = unique(as.character(x))
+                              xad = x[x %in% c('Amp', 'Del')]
+                              xvc = x[!x %in% c('Amp', 'Del')]
+
+                              if(length(xvc)>0){
+                                xvc = ifelse(test = length(xvc) > 1, yes = 'Multi_Hit', no = xvc)
+                              }
+
+                              x = ifelse(test = length(xad) > 0, yes = paste(xad, xvc, sep = ';'), no = xvc)
+                              x = gsub(pattern = ';$', replacement = '', x = x)
+                              x = gsub(pattern = '^;', replacement = '', x = x)
+                              return(x)
+                            } , value.var = 'Variant_Classification', fill = '')
 
     #If maf contains only one sample converting to matrix is not trivial.
     if(ncol(oncomat) == 2){
@@ -131,7 +215,9 @@ createOncoMatrix = function(maf){
     mdf = as.matrix(apply(oncomat, 2, function(x) as.numeric(as.character(x))))
     rownames(mdf) = rownames(oncomat.copy)
 
-    message('Sorting..')
+    if(chatty){
+      message('Sorting..')
+    }
 
     #If MAF file contains a single sample, simple sorting is enuf.
     if(ncol(mdf) == 1){
@@ -182,6 +268,31 @@ sortByMutation = function(numMat, maf){
   numMat[numMat != 0] = 1 #replacing all non-zero integers with 1 improves sorting (& grouping)
   tnumMat = t(numMat) #transposematrix
   numMat = t(tnumMat[do.call(order, c(as.list(as.data.frame(tnumMat)), decreasing = TRUE)), ]) #sort
+
+  return(numMat)
+}
+
+#Thanks to Ryan Morin for this function (https://github.com/rdmorin)
+#known limitations:
+#-will only sort on the values in the first column of the annotation data frame. This could easily be extended to all columns but I think the utility of it would degrade rather quickly with multiple annotations
+#-gsub is used to make the names in the annotation (provided by the user) hopefully have the same format as the post-processed names generated by maftools
+sortByAnnotation <-function(numMat,maf, anno){
+
+  numMat[numMat != 0] = 1 #replacing all non-zero integers with 1 improves sorting (& grouping)
+  tnumMat = t(numMat) #transposematrix
+  rownames(anno) = gsub("-",".",anno[,1])
+  anno.named = anno[colnames(numMat),2]
+
+  names(anno.named) = anno[colnames(numMat),1]
+  geneOrder = getGeneSummary(x = maf)[,Hugo_Symbol]
+
+  tndf = as.data.frame(tnumMat[,geneOrder[geneOrder %in% rownames(numMat)]])
+  adf = as.data.frame(anno.named)
+  fulldf = cbind(adf,tndf)
+
+  #numMat = t(tnumMat[do.call(order, c(as.list(fulldf), decreasing = TRUE)), ]) #sort
+  numMat = t(tnumMat[rownames(fulldf[order(fulldf$anno.named),]),])
+  numMat = numMat[geneOrder[geneOrder %in% rownames(numMat)],]
 
   return(numMat)
 }

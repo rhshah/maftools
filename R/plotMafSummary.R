@@ -6,6 +6,7 @@
 #' @param width plot parameter for output file.
 #' @param height plot parameter for output file.
 #' @param dashboard If FALSE plots simple summary instead of dashboard style.
+#' @param titvRaw TRUE. If false instead of raw counts, plots fraction.
 #' @param rmOutlier If TRUE removes outlier from boxplot.
 #' @param addStat Can be either mean or median. Default NULL.
 #' @param showBarcodes include sample names in the top bar plot.
@@ -25,13 +26,15 @@
 #' @seealso \code{\link{read.maf}} \code{\link{MAF}}
 #' @export
 
-plotmafSummary = function(maf, file = NULL, rmOutlier = TRUE, dashboard = TRUE, width = 6, height = 5, addStat = NULL, showBarcodes = FALSE, fs = 10, textSize = 2, color = NULL, statFontSize = 3, titvColor = NULL, top = 10){
+plotmafSummary = function(maf, file = NULL, rmOutlier = TRUE, dashboard = TRUE, titvRaw = TRUE,
+                          width = 6, height = 5, addStat = NULL, showBarcodes = FALSE, fs = 10,
+                          textSize = 2, color = NULL, statFontSize = 3, titvColor = NULL, top = 10){
 
 
   if(dashboard){
     #Plot in dashboard style
-
-    gg.summary= dashboard(maf = maf, color = color, rmOutlier = TRUE, titv.color = titvColor, fontSize = fs, sfs = statFontSize, n = top)
+    pie = FALSE
+    gg.summary= dashboard(maf = maf, color = color, rmOutlier = TRUE, titv.color = titvColor, fontSize = fs, sfs = statFontSize, n = top, donut = pie, rawcount = titvRaw)
 
   }else{
 
@@ -46,11 +49,11 @@ plotmafSummary = function(maf, file = NULL, rmOutlier = TRUE, dashboard = TRUE, 
       col = color
     }
 
-
     vcs = getSampleSummary(maf)
+    vcs = vcs[,colnames(vcs)[!colnames(x = vcs) %in% c('total', 'Amp', 'Del', 'CNV_total')], with = FALSE]
     #vcs = vcs[,2:(ncol(vcs)-1), with = F]
     #vcs = vcs[order(rowSums(vcs[,2:ncol(vcs), with = F]), decreasing = T)] #order tsbs based on number of mutations
-    vcs = vcs[,c(1,order(colSums(x = vcs[,2:(ncol(vcs)-1), with =FALSE]), decreasing = TRUE)+1), with =FALSE] #order based on most event
+    vcs = vcs[,c(1,order(colSums(x = vcs[,2:(ncol(vcs)), with =FALSE]), decreasing = TRUE)+1), with =FALSE] #order based on most event
 
     #melt data frame
     vcs.m = data.table::melt(data = vcs, id = 'Tumor_Sample_Barcode')

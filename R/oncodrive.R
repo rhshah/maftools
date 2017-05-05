@@ -19,8 +19,6 @@
 #' laml <- read.maf(maf = laml.maf, removeSilent = TRUE, useAll = FALSE)
 #' laml.sig <- oncodrive(maf = laml, AACol = 'Protein_Change', minMut = 5)
 #'
-#'
-#' @importFrom dplyr filter
 #' @export
 
 
@@ -85,8 +83,6 @@ oncodrive = function(maf, AACol = NULL, minMut = 5, pvalMethod = 'zscore', nBgGe
     bg.mean = 0.279
     bg.sd = 0.13
   }
-
-
 
   #non-syn variants
   non.syn.maf = maf@data
